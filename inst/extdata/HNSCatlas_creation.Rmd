@@ -1,29 +1,38 @@
 ---
-title: "Untitled"
-output: html_document
-date: "2025-02-11"
+title: "HNSCC Atlas Creation Pipeline"
+subtitle: "Integration and annotation: STACAS, scGate and Ikarus"
+author: "Cristina Conde Lopez"
+date: "`r Sys.Date()`"
+output: 
+ prettydoc::html_pretty:
+    toc: true
+    theme: leonids
+    highlight: github
+    number_sections: true
+ pdf_document:
+    toc: true
+    toc_depth: 4
+editor_options: 
+  chunk_output_type: inline
 ---
-## *Data Loading, Metadata Harmonization, and Basic Quality Control*
+
+# Data Loading, Metadata Harmonization, and Basic Quality Control
 
 Before merging the datasets, we first load and pre‐process each dataset separately. This stage consists of the following steps:
 
-	1.	*Loading Raw Data*:
-For each dataset (Kurten, Bill, Choi, and Puram), we read the raw count files (e.g., matrix files, features/genes, and barcode files for 10X data or RDS/h5ad files for other formats). For example, for the Kurten dataset we iterate over directories containing the raw files and create a Seurat object for each sample.
+1. **Loading Raw Data**: For each dataset (Kurten, Bill, Choi, and Puram), we read the raw count files (e.g., matrix files, features/genes, and barcode files for 10X data or RDS/h5ad files for other formats). For example, for the Kurten dataset we iterate over directories containing the raw files and create a Seurat object for each sample.
 
-	2.	*Standardizing Metadata*:
-Once the Seurat objects are created, we extract and reformat the metadata to ensure consistency across datasets. This involves:
+2. **Standardizing Metadata**:Once the Seurat objects are created, we extract and reformat the metadata to ensure consistency across datasets. This involves:
 	•	Extracting sample names and patient identifiers (e.g., using regular expressions to remove prefixes).
 	•	Splitting concatenated cell identifiers into separate columns such as Patient, Sample Type, and Barcode.
 	•	Loading additional clinical metadata (e.g., Sex, Age, Smoking, Alcohol, Disease Site, HPV status, etc.) and matching these data to the appropriate samples.
 	
-	3.	*Basic Quality Control (QC) and Filtering*:
-Basic QC steps are applied to each dataset to remove non‐relevant cells and artifacts. This may include:
+3. **Basic Quality Control (QC) and Filtering**: Basic QC steps are applied to each dataset to remove non‐relevant cells and artifacts. This may include:
 	•	Filtering out cells with low gene counts or high mitochondrial gene expression.
 	•	Removing cells that do not match the expected sample types or clinical conditions.
 	•	Subsetting the datasets to retain only cells with the standardized metadata columns.
 	
-	4.	*Preparing for Merging*:
-Once each dataset has been loaded, cleaned, and standardized (i.e., ensuring that they all contain the same metadata columns and have been filtered for quality), the objects are then ready to be merged. The merging is done using Seurat’s merge() function, which combines the individual Seurat objects into one integrated object that can be used for downstream analyses.
+4. **Preparing for Merging**: Once each dataset has been loaded, cleaned, and standardized (i.e., ensuring that they all contain the same metadata columns and have been filtered for quality), the objects are then ready to be merged. The merging is done using Seurat’s merge() function, which combines the individual Seurat objects into one integrated object that can be used for downstream analyses.
 
 ```{r eval=FALSE, include=T}
 ## Examples of preparation for merging
@@ -41,7 +50,7 @@ Puram@meta.data$Source <- "Primary"
 Bill$HPV  <- revalue(Bill$HPV, c("Negative" = "HPV-", "Positive" = "HPV+"))
 ```
 
-## Merge Datasets
+# Merge Datasets
 
 ```{r eval=FALSE, include=T}
 # Read in or use previously processed objects.
@@ -60,7 +69,7 @@ HNSC_combined <- merge(Kurten, y = c(Bill, Puram, Choi),
 HNSC_combined@meta.data$Dataset <- sub("\\_.*", "", rownames(HNSC_combined@meta.data))
 ```
 
-## Standard Analysis of Merged Object
+# Standard Analysis of Merged Object
 
 ```{r eval=FALSE, include=T}
 # Standard Analysis on the Merged Object
@@ -106,7 +115,7 @@ HNSC_combined@meta.data$Cells <- revalue(HNSC_combined@meta.data$Cell_Type, c(
 ))
 ```
 
-## Advanced Integration (Using STACAS and scGate)
+# Advanced Integration (Using STACAS and scGate)
 
 ```{r eval=FALSE, include=T}
 # Example with STACAS:
@@ -134,11 +143,11 @@ HNSC_combined_stacas@meta.data <- HNSC_combined_stacas@meta.data %>%
   mutate(Cells_Tumor_Integration = if_else(Tumor.y == "Tumor", "Tumor", scGate_multi))
 ```
 
-## Using Ikarus for Cell Annotation
+# Using Ikarus for Cell Annotation
 
 After integrating and cleaning the datasets with Seurat, we use **Ikarus** to perform further cell annotation in Python. Ikarus requires the input data in the [AnnData](https://anndata.readthedocs.io/en/latest/) format. To achieve this, we first convert the Seurat object to an h5ad file using `writeH5AD()`. Then, we run a Python script (or work interactively) after activating the Ikarus environment.
 
-### Step 1: Convert Seurat Object to h5ad
+## Step 1: Convert Seurat Object to h5ad
 
 Make sure you have installed and loaded the **SeuratDisk** package. Then, simply convert your Seurat object (here, assumed to be named `HNSC_combined_stacas_scGate`) to an h5ad file:
 
@@ -153,7 +162,7 @@ output_filename <- "sce.h5ad"
 WriteH5AD(HNSC_combined_stacas_scGate, filename = output_filename)
 ```
 
-### Step 2: Run Ikarus in Python
+## Step 2: Run Ikarus in Python
 
 Then, run the following Python code. This code loads the `sce.h5ad` file, checks and adjusts the gene symbols (if needed), loads the Ikarus model, and makes predictions:
 ```{python eval=FALSE, include=T}
