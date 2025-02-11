@@ -1,0 +1,200 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-02-11"
+---
+## *Data Loading, Metadata Harmonization, and Basic Quality Control*
+
+Before merging the datasets, we first load and pre‐process each dataset separately. This stage consists of the following steps:
+
+	1.	*Loading Raw Data*:
+For each dataset (Kurten, Bill, Choi, and Puram), we read the raw count files (e.g., matrix files, features/genes, and barcode files for 10X data or RDS/h5ad files for other formats). For example, for the Kurten dataset we iterate over directories containing the raw files and create a Seurat object for each sample.
+
+	2.	*Standardizing Metadata*:
+Once the Seurat objects are created, we extract and reformat the metadata to ensure consistency across datasets. This involves:
+	•	Extracting sample names and patient identifiers (e.g., using regular expressions to remove prefixes).
+	•	Splitting concatenated cell identifiers into separate columns such as Patient, Sample Type, and Barcode.
+	•	Loading additional clinical metadata (e.g., Sex, Age, Smoking, Alcohol, Disease Site, HPV status, etc.) and matching these data to the appropriate samples.
+	
+	3.	*Basic Quality Control (QC) and Filtering*:
+Basic QC steps are applied to each dataset to remove non‐relevant cells and artifacts. This may include:
+	•	Filtering out cells with low gene counts or high mitochondrial gene expression.
+	•	Removing cells that do not match the expected sample types or clinical conditions.
+	•	Subsetting the datasets to retain only cells with the standardized metadata columns.
+	
+	4.	*Preparing for Merging*:
+Once each dataset has been loaded, cleaned, and standardized (i.e., ensuring that they all contain the same metadata columns and have been filtered for quality), the objects are then ready to be merged. The merging is done using Seurat’s merge() function, which combines the individual Seurat objects into one integrated object that can be used for downstream analyses.
+
+```{r eval=FALSE, include=T}
+## Examples of preparation for merging
+
+# Standardize metadata column names where needed.
+colnames(Puram@meta.data)[which(names(Puram@meta.data) == "oldCellTypeColumn")] <- "Cell_Type"  # Adjust as needed.
+Kurten@meta.data$Cell_Type <- Idents(Kurten)
+colnames(Kurten@meta.data)[5] <- "Source"  # Example adjustment.
+colnames(Choi@meta.data)[11] <- "Cell_Type"
+colnames(Choi@meta.data)[8]  <- "Source"
+
+# Harmonize HPV labels for Puram and Bill
+Puram$HPV <- revalue(Puram$HPV, c("Negative" = "HPV-", "Positive" = "HPV+"))
+Puram@meta.data$Source <- "Primary"
+Bill$HPV  <- revalue(Bill$HPV, c("Negative" = "HPV-", "Positive" = "HPV+"))
+```
+
+## Merge Datasets
+
+```{r eval=FALSE, include=T}
+# Read in or use previously processed objects.
+# (For example, assume that Puram, Kurten, and Choi have been saved.)
+Puram <- readRDS("path/to/Puram.rds")
+Kurten <- readRDS("path/to/Kurten.rds")
+Choi   <- readRDS("path/to/Choi.rds")
+Bill <- readRDS("path/to/Bill.rds")
+
+# Merge all datasets into one integrated object.
+HNSC_combined <- merge(Kurten, y = c(Bill, Puram, Choi), 
+                       add.cell.ids = c("Kurten", "Bill", "Puram", "Choi"), 
+                       project = "HNSC_All")
+
+# Add a dataset identifier (e.g., extracted from cell names)
+HNSC_combined@meta.data$Dataset <- sub("\\_.*", "", rownames(HNSC_combined@meta.data))
+```
+
+## Standard Analysis of Merged Object
+
+```{r eval=FALSE, include=T}
+# Standard Analysis on the Merged Object
+
+HNSC_combined <- NormalizeData(HNSC_combined)
+HNSC_combined <- FindVariableFeatures(HNSC_combined)
+HNSC_combined <- ScaleData(HNSC_combined)
+HNSC_combined <- RunPCA(HNSC_combined)
+HNSC_combined <- FindNeighbors(HNSC_combined, dims = 1:30)
+HNSC_combined <- FindClusters(HNSC_combined, resolution = 2, cluster.name = "unintegrated_clusters")
+HNSC_combined <- RunUMAP(HNSC_combined, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
+
+# Optionally, clean the object by subsetting for specific sample types and patient sex.
+HNSC_combined$HPV <- revalue(HNSC_combined$HPV, c("Negative"="HPV-", "Positive"="HPV+"))
+HNSC_combined <- subset(HNSC_combined, subset = Source %in% c("CD45p", "CD45n", "Primary", "CA", "Unknown primary of the head and neck"))
+HNSC_combined <- subset(HNSC_combined, subset = Sex == "Male")
+
+# Rename cell types for consistency.
+HNSC_combined@meta.data$Cells <- revalue(HNSC_combined@meta.data$Cell_Type, c(
+  "NK-cell" = "NK Cells", 
+  "T-cell" = "T Cells", 
+  "T.cells" = "T Cells", 
+  "T_cells" = "T Cells",
+  "B-Cells" = "B Cells", 
+  "B-cell" = "B Cells", 
+  "B_cells" = "B Cells", 
+  "Macrophage" = "Macrophages",
+  "Epithelial" = "Epithelial Cells", 
+  "NormalEpith" = "Epithelial Cells", 
+  "Mast.cells" = "Mast Cells", 
+  "Mast cell" = "Mast Cells",
+  "Endothelial" = "Endothelial Cells", 
+  "Endothelial_cells" = "Endothelial Cells", 
+  "Endothelial.cells" = "Endothelial Cells",
+  "Fibroblast" = "Fibroblasts", 
+  "Dendritic_cells" = "Denditric Cells", 
+  "Dendritic.cells" = "Denditric Cells", 
+  "Malignant.cells" = "Tumor",
+  "Epithelial.cells" = "Epithelial Cells", 
+  "Mast_cells" = "Mast Cells", 
+  "B_Plasma.cells" = "Plasma cell", 
+  "27" = "Unknown"
+))
+```
+
+## Advanced Integration (Using STACAS and scGate)
+
+```{r eval=FALSE, include=T}
+# Example with STACAS:
+nfeatures <- 1000  # Number of anchor features
+npcs <- 20         # Number of principal components
+HNSC_combined <- UpdateSeuratObject(HNSC_combined) %>% NormalizeData()
+
+# Split the object by dataset for STACAS integration.
+combined_list <- SplitObject(HNSC_combined, split.by = "Dataset")
+HNSC_combined_stacas <- Run.STACAS(combined_list, 
+                                   anchor.features = nfeatures, 
+                                   dims = 1:npcs, 
+                                   cell.labels = "Cells")
+HNSC_combined_stacas <- RunUMAP(HNSC_combined_stacas, dims = 1:npcs)
+saveRDS(HNSC_combined_stacas, "HNSC_combined_stacas.rds")
+
+# Example: Apply scGate to annotate cells based on TME models.
+models.DB <- scGate::get_scGateDB()
+models.list <- models.DB$human$TME_HiRes
+HNSC_combined_stacas_scGate <- scGate(HNSC_combined_stacas, model = models.list, ncores = 4)
+saveRDS(HNSC_combined_stacas, "HNSC_combined_stacas_scGate.rds")
+
+# Add a final annotation column for tumor vs. non-tumor cells.
+HNSC_combined_stacas@meta.data <- HNSC_combined_stacas@meta.data %>%
+  mutate(Cells_Tumor_Integration = if_else(Tumor.y == "Tumor", "Tumor", scGate_multi))
+```
+
+## Using Ikarus for Cell Annotation
+
+After integrating and cleaning the datasets with Seurat, we use **Ikarus** to perform further cell annotation in Python. Ikarus requires the input data in the [AnnData](https://anndata.readthedocs.io/en/latest/) format. To achieve this, we first convert the Seurat object to an h5ad file using `writeH5AD()`. Then, we run a Python script (or work interactively) after activating the Ikarus environment.
+
+### Step 1: Convert Seurat Object to h5ad
+
+Make sure you have installed and loaded the **SeuratDisk** package. Then, simply convert your Seurat object (here, assumed to be named `HNSC_combined_stacas_scGate`) to an h5ad file:
+
+```{r eval=FALSE, include=T}
+# Convert the Seurat object to an AnnData (h5ad) file.
+library(SeuratDisk)
+
+# Specify the output filename. Adjust the filename as needed.
+output_filename <- "sce.h5ad"
+
+# Save the object as an h5ad file.
+WriteH5AD(HNSC_combined_stacas_scGate, filename = output_filename)
+```
+
+### Step 2: Run Ikarus in Python
+
+Then, run the following Python code. This code loads the `sce.h5ad` file, checks and adjusts the gene symbols (if needed), loads the Ikarus model, and makes predictions:
+```{python eval=FALSE, include=T}
+## In Python
+
+import urllib.request
+import anndata
+import pandas as pd
+from pathlib import Path
+from ikarus import classifier, utils, data
+
+# Load the AnnData object
+adata = anndata.read_h5ad("sce.h5ad")
+
+# If necessary, ensure that adata.var contains gene symbols.
+# For example, if you need to rename or adjust the gene symbols, you could do:
+# (Replace 'gene_symbol' with the appropriate column/data from your object)
+# df = pd.DataFrame(index=adata.var_names, data=adata.var_names)
+# adata.var = df
+
+# Define the path to the signatures file (GMT format)
+signatures_path = Path("~/out/signatures.gmt")
+# Optionally, check the file content:
+# pd.read_csv(signatures_path, sep="\t", header=None)
+
+# Define the model file path
+model_path = Path("out/core_model.joblib")
+
+# Create the Ikarus classifier.
+# Note: In cases where less than 70% of gene names match between the model and your data,
+# set adapt_signatures=True.
+model = classifier.Ikarus(signatures_gmt=signatures_path, out_dir="out", adapt_signatures=True)
+
+# Load the core model
+model.load_core_model(model_path)
+
+# Run the prediction for the specified tissue type (e.g., "HeadNNeck")
+# The predictions will be saved automatically (adjust the parameters as needed).
+_ = model.predict(adata, "HeadNNeck", save=True)
+```
+
+
+
+
