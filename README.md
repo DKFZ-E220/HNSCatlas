@@ -2,6 +2,8 @@
 
 **HNSCatlas** is an R package containing single-cell RNA-seq data from Head and Neck Squamous Cell Carcinoma (HNSCC) patients. The dataset includes metadata such as patient sex, HPV status, and cell type annotations, providing a unified atlas for studying HNSCC microenvironments.
 
+Direct Download Link: https://hifis-storage.desy.de:2880/Helmholtz/E220-Radioonc_biol-DKFZ/HNSCC_Atlas.rds
+
 ---
 
 ## Features
